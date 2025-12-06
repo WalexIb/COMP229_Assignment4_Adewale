@@ -1,0 +1,35 @@
+{
+  "name": "portfolio",
+  "version": "1.0.0",
+  "description": "Portfolio Application Backend",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WalexIb/MyPortfolio_COMP229.git"
+  },
+  "keywords": [],
+  "author": "Walex Ib",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/WalexIb/MyPortfolio_COMP229/issues"
+  },
+  "homepage": "https://github.com/WalexIb/MyPortfolio_COMP229#readme",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.19.1"
+  },
+  "devDependencies": {
+    "@ljharb/tsconfig": "^0.3.2",
+    "nodemon": "^3.1.0"
+  }
+}
