@@ -16,24 +16,27 @@ const JWT_SECRET = config.jwtSecret;
 // Register a new user
 export const register = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    // Extract all necessary fields: username, email, password
+    const { username, email, password, role } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ username });
+// Check for existing username (or email, better practice!)
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
-      return res.status(400).json({ message: "Username already taken" });
+        return res.status(400).json({ message: "Username or Email already taken" });
     }
 
-    // User model handles password hashing
-    const user = new User({ username, password });
+// Pass ALL fields to the User constructor
+    const user = new User({ username, email, password, role }); 
     const newUser = await user.save();
-    
-    // Return success response
-    res.status(201).json({ message: "User registered successfully.", 
-      user: { username: newUser.username, id: newUser._id } 
+
+    // Return success response (exclude password)
+    res.status(201).json({
+      message: "User registered successfully.",
+      user: { username: newUser.username, email: newUser.email, id: newUser._id }
     });
   } catch (err) {
     console.error("Registration error:", err);
+    // Use 500 for server/database errors
     res.status(400).json({ message: "Server error during registration" });
   }
 };
@@ -43,13 +46,14 @@ export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Find user by username
-    const user = await User.findOne({ username });
+    // Find user by username. Use .select('+password') if it's set to select: false
+    const user = await User.findOne({ username }).select('+password');
+
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    // Compare password
+    // Compare password 
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials." });
@@ -59,7 +63,7 @@ export const login = async (req, res) => {
     const payload = {
       sub: user._id,
       username: user.username,
-      role: user.role || 'admin' // Default to 'admin' if role not set
+      role: user.role || 'admin'
     };
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "1h" });
@@ -72,16 +76,30 @@ export const login = async (req, res) => {
   }
 };
 
+// POST /api/users/logout - Logout endpoint (client-side action)
+export const logout = (req, res) => {
+  // In a stateless JWT system, the client simply discards the token.
+  // This endpoint provides a clean success response.
+  res.status(200).json({ message: "Logout successful. Client token should be discarded." });
+};
+
 // Basic CRUD Methods
+
+// Protected POST /api/users - Create new user (e.g., by admin)
 export const create = async (req, res) => {
   try {
+    // Password hashing is handled by the pre-save hook on the User model
     const user = new User(req.body);
     const newUser = await user.save();
+
+    // Exclude password from response
+    newUser.password = undefined;
     res.status(201).json({
       message: "User created successfully.",
       user: { username: newUser.username, id: newUser._id }
     });
   } catch (err) {
+    // Mongoose validation errors often return a 400 status
     res.status(400).json({ message: err.message });
   }
 };
@@ -93,7 +111,7 @@ export const list = async (req, res) => {
     res.json(users);
   } catch (err) {
     res.status(500).json({ message: err.message });
-  } 
+  }
 };
 
 // Get user by ID middleware
@@ -104,30 +122,41 @@ export const userByID = async (req, res, next, id) => {
     req.profile = user; // Attach user to req.profile
     next();
   } catch (err) {
-    res.status(400).json({ message: "Invalid user ID" });
+    // ⚠️ Robust Error Handling: Check for Mongoose casting errors
+    if (err.name === 'CastError') {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+    res.status(500).json({ message: "Server error processing user ID" });
   }
 };
 
 // Read single user
 export const read = (req, res) => {
-  req.profile.password = undefined; // Exclude password
-  res.json(req.profile);  
+  
+  req.profile.password = undefined;
+  res.json(req.profile);
 };
 
 // Update user by ID
 export const update = async (req, res) => {
   try {
-    const updatedUser = req.profile;
+    let updatedUser = req.profile; // Get the user attached by userByID
 
-    // Apply updates
-    Object.assign(updatedUser, req.body);
-    userToUpdate.updated = Date.now();
+    // Update fields if provided in req.body
+    for (const key in req.body) {
+      if (req.body[key] !== undefined) {
+        updatedUser[key] = req.body[key];
+      }
+    }
 
-    const savedUser = await updatedUser.save();
+    // Set updated timestamp
+    updatedUser.updated = Date.now();
+
+    const savedUser = await updatedUser.save(); // Hashing hook runs if password was in req.body
 
     // Exclude password from response
     savedUser.password = undefined;
-    res.json(updatedUser);
+    res.json(savedUser);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -135,125 +164,37 @@ export const update = async (req, res) => {
 
 // Delete user by ID
 export const remove = async (req, res) => {
-    try {
-        // Use the user object attached by userByID middleware (req.profile)
-        const user = req.profile;
-        const deletedUser = await user.deleteOne(); // Use deleteOne() on the Mongoose document
+  try {
+    const user = req.profile;
+    const deletedUser = await user.deleteOne();
 
-        // if (!deletedUser) return res.status(404).json({ message: "User not found" }); // Not needed, as userByID guarantees existence
-
-        res.json({ message: `${deletedUser.username} deleted successfully` });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+    res.json({ message: `${deletedUser.username} deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 // Delete all users
 export const removeAll = async (req, res) => {
-    // This is now protected by the authenticateToken middleware
-    try {
-        const result = await User.deleteMany();
-        res.json({ message: `${result.deletedCount} user(s) deleted successfully` });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+  try {
+    const result = await User.deleteMany();
+    res.json({ message: `${result.deletedCount} user(s) deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
-// --- Updated Export ---
+// --- Export All Controllers ---
 export default {
-    register, // New
-    login,    // New
-    create,
-    list,
-    userByID,
-    read,
-    update,
-    remove,
-    removeAll
+  register,
+  login,
+  logout, // Added
+  create,
+  list,
+  userByID,
+  read,
+  update,
+  remove,
+  removeAll
+
 };
-
-
-
-
-
-
-
-
-// // Create new user
-// export const create = async (req, res) => {
-//   try {
-//     const user = new User(req.body);
-//     const newUser = await user.save();
-//     res.status(201).json(newUser);
-//   } catch (err) {
-//     res.status(400).json({ message: err.message });
-//   }
-// };
-
-// // List all users
-// export const list = async (req, res) => {
-//   try {
-//     const users = await User.find();
-//     res.json(users);
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// };
-
-// // Get user by ID middleware
-// export const userByID = async (req, res, next, id) => {
-//   try {
-//     const user = await User.findById(id);
-//     if (!user) return res.status(404).json({ message: "User not found" });
-//     req.user = user;
-//     next();
-//   } catch (err) {
-//     res.status(400).json({ message: "Invalid user ID" });
-//   }
-// };
-
-// // Read single user
-// export const read = (req, res) => {
-//   res.json(req.user);
-// };
-
-// // Update user by ID
-// export const update = async (req, res) => {
-//   try {
-//     const updatedUser = await User.findByIdAndUpdate(req.user._id, req.body, { new: true });
-//     res.json(updatedUser);
-//   } catch (err) {
-//     res.status(400).json({ message: err.message });
-//   }
-// };
-
-// // Delete user by ID
-// export const remove = async (req, res) => {
-//   try {
-//     const deletedUser = await User.findByIdAndDelete(req.user._id);
-//     if (!deletedUser) return res.status(404).json({ message: "User not found" });
-//     res.json({ message: "User deleted successfully" });
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// };
-
-// // Delete all users
-// export const removeAll = async (req, res) => {
-//   try {
-//     const result = await User.deleteMany();
-//     res.json({ message: `${result.deletedCount} user(s) deleted successfully` });
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// };
-
-// export default {
-//   create,
-//   list,
-//   userByID,
-//   read,
-//   update,
-//   remove,
-//   removeAll
-// };

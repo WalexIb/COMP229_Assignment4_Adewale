@@ -16,6 +16,8 @@ const router = express.Router();
 router.route("/register").post(userCtrl.register);
 // POST /api/users/login - Login and obtain JWT token
 router.route("/login").post(userCtrl.login);
+// POST /api/users/logout - Logout user (for client-side token discard)
+router.route("/logout").post(userCtrl.logout);
 
 // Protected POST /api/users - Only authenticated users can create more users
 router.route("/").post(authenticationToken, userCtrl.create);
@@ -28,35 +30,10 @@ router.route("/").delete(authenticationToken, userCtrl.removeAll);
 
 // Protected CRUDE on specific user by ID
 router.param("userId", userCtrl.userByID);
-router.route("/:userId").get(authenticationToken, userCtrl.read);
-
-// Update user - protected (Not part of the assignment, I just feel like adding it
-router.route("/:userId").put(authenticationToken, userCtrl.update);
-
-// Delete user - protected
-router.route("/:userId").delete(authenticationToken, userCtrl.remove);
+// Update user - protected 
+router.route("/:userId")
+    .put(authenticationToken, userCtrl.update)
+    .get(authenticationToken, userCtrl.read)
+    .delete(authenticationToken, userCtrl.remove);
 
 export default router;
-
-
-
-
-
-// import express from "express";
-// import userCtrl from "../controllers/user.controller.js";
-
-// // Create router
-// const router = express.Router();
-
-// // CRUD routes
-// router.route("/api/users").post(userCtrl.create);
-// router.route("/api/users").get(userCtrl.list);
-// router.route("/api/users").delete(userCtrl.removeAll); // delete all users
-
-// router.param("userId", userCtrl.userByID);
-
-// router.route("/api/users/:userId").get(userCtrl.read);
-// router.route("/api/users/:userId").put(userCtrl.update);
-// router.route("/api/users/:userId").delete(userCtrl.remove);
-
-// export default router;
